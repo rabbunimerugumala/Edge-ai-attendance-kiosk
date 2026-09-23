@@ -37,7 +37,14 @@ DB_PATH = "attendance.db"
 TRAINER_FILE = "face-trainer.yml"
 STUDENTS_FILE = "students.json"
 
-LBPH_CONFIDENCE_THRESHOLD = 75.0
+# LBPH Biometric Distance Thresholds:
+#   OpenCV LBPH measures Euclidean distance between Local Binary Pattern Histograms.
+#   Lower distance = closer biometric match.
+#     • < 50.0: Strict match (Same person under lighting variations)
+#     • 50.0 - 65.0: Attendance recognition match (Suitable for daily check-in)
+#     • > 65.0: Different individual (Siblings, family members, classmates)
+LBPH_RECOGNITION_THRESHOLD = 65.0  # Used for daily attendance scanning
+LBPH_DUPLICATE_THRESHOLD = 50.0    # Strict threshold for duplicate identity detection (<= 50.0 & >= 55% similarity)
 COOLDOWN_SECONDS = 10.0
 SYNC_INTERVAL_SECONDS = 15.0
 
@@ -564,7 +571,7 @@ class CameraManager:
                     elif self.recognizer is not None:
                         try:
                             student_id, distance = self.recognizer.predict(crop_eq)
-                            if distance <= LBPH_CONFIDENCE_THRESHOLD:
+                            if distance <= LBPH_RECOGNITION_THRESHOLD:
                                 is_cooling, remaining = anti_spam.is_cooling_down(student_id)
                                 registry = load_students_registry()
                                 student_info = registry.get(str(student_id), {})
@@ -878,25 +885,28 @@ def api_check_duplicate():
     if crop is not None and camera_mgr.recognizer is not None:
         try:
             pred_id, dist = camera_mgr.recognizer.predict(crop)
-            if dist <= LBPH_CONFIDENCE_THRESHOLD:
+            # Only consider a biometric duplicate if the match is strictly high confidence (dist <= 50.0)
+            if dist <= LBPH_DUPLICATE_THRESHOLD:
                 matched_info = registry.get(str(pred_id), {})
                 matched_roll = matched_info.get("roll_number", str(pred_id)).upper()
                 is_same_roll = (matched_roll == roll_number) if roll_number else False
                 is_duplicate_identity = not is_same_roll
-                confidence = max(15, min(99, int((1.0 - (dist / 85.0)) * 100)))
+                confidence = max(10, min(99, int((1.0 - (dist / 80.0)) * 100)))
 
-                face_match = {
-                    "matched": True,
-                    "student_id": pred_id,
-                    "roll_number": matched_roll,
-                    "student_name": matched_info.get("student_name", "Unknown"),
-                    "year": matched_info.get("year", ""),
-                    "branch": matched_info.get("branch", ""),
-                    "distance": round(float(dist), 1),
-                    "confidence": confidence,
-                    "is_same_roll": is_same_roll,
-                    "is_duplicate_identity": is_duplicate_identity
-                }
+                # Only block if similarity is actually high (>= 55%)
+                if confidence >= 55 and is_duplicate_identity:
+                    face_match = {
+                        "matched": True,
+                        "student_id": pred_id,
+                        "roll_number": matched_roll,
+                        "student_name": matched_info.get("student_name", "Unknown"),
+                        "year": matched_info.get("year", ""),
+                        "branch": matched_info.get("branch", ""),
+                        "distance": round(float(dist), 1),
+                        "confidence": confidence,
+                        "is_same_roll": is_same_roll,
+                        "is_duplicate_identity": True
+                    }
         except Exception as e:
             print(f"[CHECK DUPLICATE WARN] LBPH prediction error: {e}")
 
@@ -987,16 +997,19 @@ def api_capture_crop():
     if sample_index == 1 and not overwrite and camera_mgr.recognizer is not None:
         try:
             pred_id, dist = camera_mgr.recognizer.predict(crop)
-            if dist <= LBPH_CONFIDENCE_THRESHOLD:
-                matched_info = registry.get(str(pred_id), {})
-                matched_roll = matched_info.get("roll_number", str(pred_id)).upper()
-                if matched_roll and matched_roll != roll_number:
-                    return jsonify({
-                        "status": "duplicate_biometric",
-                        "message": f"Biometric duplicate: Face is already enrolled under '{matched_info.get('student_name')}' (Roll No: {matched_roll}). Cannot register under a new identity.",
-                        "matched_student": matched_info,
-                        "distance": round(float(dist), 1)
-                    }), 409
+            if dist <= LBPH_DUPLICATE_THRESHOLD:
+                confidence = max(10, min(99, int((1.0 - (dist / 80.0)) * 100)))
+                if confidence >= 55:
+                    matched_info = registry.get(str(pred_id), {})
+                    matched_roll = matched_info.get("roll_number", str(pred_id)).upper()
+                    if matched_roll and matched_roll != roll_number:
+                        return jsonify({
+                            "status": "duplicate_biometric",
+                            "message": f"Biometric duplicate: Face strongly matches enrolled student '{matched_info.get('student_name')}' (Roll No: {matched_roll}) with {confidence}% similarity.",
+                            "matched_student": matched_info,
+                            "distance": round(float(dist), 1),
+                            "confidence": confidence
+                        }), 409
         except Exception:
             pass
 

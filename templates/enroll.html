@@ -179,6 +179,13 @@
     btn.disabled = false;
   }
 
+  function confirmOverrideAndEnroll() {
+    document.getElementById('duplicateModal').style.display = 'none';
+    if (pendingCapturePayload) {
+      executeCaptureRoutine(pendingCapturePayload, true);
+    }
+  }
+
   function confirmOverwrite() {
     document.getElementById('duplicateModal').style.display = 'none';
     if (pendingCapturePayload) {
@@ -234,27 +241,28 @@
       const checkData = await checkRes.json();
 
       if (checkData.face_match && checkData.face_match.matched && checkData.face_match.is_duplicate_identity) {
+        pendingCapturePayload = payload;
         const match = checkData.face_match;
-        document.getElementById('modalTitle').innerHTML = '⛔ Biometric Duplicate Detected';
+        document.getElementById('modalTitle').innerHTML = '⚠️ Potential Biometric Match Detected';
         document.getElementById('modalMessage').innerHTML = `
-          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-sm); padding: 1.1rem; margin-bottom: 1rem; text-align: left;">
-            <div style="font-weight: 700; color: var(--accent-red); font-size: 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
-              <span>⚠️</span> Face Already Registered to Another Student
+          <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-sm); padding: 1.1rem; margin-bottom: 1rem; text-align: left;">
+            <div style="font-weight: 700; color: #92400e; font-size: 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+              <span>⚠️</span> Face Resembles Enrolled Student (${match.confidence}% match)
             </div>
             <div style="font-size: 0.90rem; color: var(--text-main); line-height: 1.6;">
-              &bull; Enrolled Student: <strong>${match.student_name}</strong><br>
+              &bull; Resembles: <strong>${match.student_name}</strong><br>
               &bull; Existing Roll No: <strong style="color: var(--accent-indigo);">${match.roll_number}</strong><br>
               &bull; Department: <strong>${match.branch || 'N/A'}</strong><br>
-              &bull; Biometric Match: <strong style="color: var(--accent-green);">${match.confidence}% Similarity</strong> (Dist: ${match.distance})
+              &bull; Similarity: <strong style="color: var(--accent-indigo);">${match.confidence}%</strong> (Dist: ${match.distance})
             </div>
           </div>
-          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin: 0; text-align: left;">
-            <strong style="color: var(--accent-red);">Registration Blocked:</strong> The Kiosk enforces a strict 1-to-1 biometric policy. The same face cannot be registered under a new roll number.
+          <p style="font-size: 0.86rem; color: var(--text-muted); line-height: 1.5; margin: 0; text-align: left;">
+            If this is a <strong>brother, sibling, or family member</strong> with similar facial traits, click <strong>"Proceed & Register New Student"</strong>. If this is the exact same student attempting to enroll twice under another ID, click <strong>"Cancel"</strong>.
           </p>
         `;
         document.getElementById('modalFooter').innerHTML = `
-          <button class="btn btn-secondary btn-sm" onclick="closeModal()">Dismiss & Cancel</button>
-          <a href="{{ url_for('students_page') }}" class="btn btn-primary btn-sm">View in Student Roster</a>
+          <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="confirmOverrideAndEnroll()" style="background: linear-gradient(135deg, var(--accent-indigo), #4338ca);">Proceed & Register New Student</button>
         `;
         document.getElementById('duplicateModal').style.display = 'flex';
         btn.disabled = false;
