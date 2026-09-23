@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+
+{% block title %}Enroll Student - Touchless Attendance Kiosk{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Student Registration & Face Enrollment</h1>
+    <p class="page-desc">Register new student credentials and capture 20 standardized face crops directly from the webcam.</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="{{ url_for('students_page') }}" class="btn btn-secondary btn-sm">
+      &larr; View Student Roster
+    </a>
+  </div>
+</div>
+
+<!-- Duplicate Student Warning Modal Dialog -->
+<div id="duplicateModal" class="modal-backdrop" style="display: none;">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span id="modalTitle">⚠️ Student Already Registered</span>
+    </div>
+    <div class="modal-body" id="modalMessage">
+      <!-- Injected dynamically -->
+    </div>
+    <div class="modal-footer" id="modalFooter">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="modalConfirmBtn" onclick="confirmOverwrite()">Yes, Overwrite & Re-Enroll</button>
+    </div>
+  </div>
+</div>
+
+<div class="two-col-grid">
+  <!-- Left Column: Comprehensive Registration Form -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">1. Student Details</span>
+      <span class="badge badge-indigo">Capture Mode</span>
+    </div>
+    <div class="panel-body">
+      <div id="enrollAlert" style="display: none;" class="alert"></div>
+
+      <!-- Form Grid -->
+      <div class="form-group">
+        <label class="form-label" for="studentName">Student Full Name *</label>
+        <input type="text" id="studentName" class="form-control" placeholder="e.g. Alex Rivera" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="rollNumber">Roll Number (Alphanumeric) *</label>
+        <input type="text" id="rollNumber" class="form-control" placeholder="e.g. 21B91A0501, CS2026-042" required style="text-transform: uppercase;">
+        <span style="font-size: 0.76rem; color: var(--text-dim); margin-top: 4px; display: block;">Supports college codes, hyphens, and characters.</span>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label" for="studentYear">Year of Study *</label>
+          <select id="studentYear" class="form-control" required>
+            <option value="1st Year">1st Year</option>
+            <option value="2nd Year">2nd Year</option>
+            <option value="3rd Year" selected>3rd Year</option>
+            <option value="4th Year">4th Year</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="studentBranch">Branch / Department *</label>
+          <select id="studentBranch" class="form-control" required>
+            <option value="Computer Science & Engineering">Computer Science & Engineering (CSE)</option>
+            <option value="AI & Data Science">AI & Data Science (AIDS)</option>
+            <option value="Information Technology">Information Technology (IT)</option>
+            <option value="Electronics & Communication">Electronics & Communication (ECE)</option>
+            <option value="Electrical & Electronics">Electrical & Electronics (EEE)</option>
+            <option value="Mechanical Engineering">Mechanical Engineering</option>
+            <option value="Civil Engineering">Civil Engineering</option>
+            <option value="Other">Other Department</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Progress Section -->
+      <div style="margin: 1.5rem 0; padding: 1.15rem; background: #f8fafc; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+        <label class="form-label" style="margin-bottom: 0.2rem;">Face Capture Progress (20 Normalized Crops)</label>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 600; color: var(--text-muted);">
+          <span id="captureStatusText">Position face inside camera viewfinder</span>
+          <span id="captureCountText" style="color: var(--accent-indigo);">0 / 20</span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <button class="btn btn-primary" id="btnStartCapture" onclick="initiateCaptureFlow()">
+          📸 Start 20-Sample Face Capture
+        </button>
+        <button class="btn btn-secondary" id="btnTrain" onclick="triggerRetrain()" style="display: none; background: #ecfdf5; color: #065f46; border-color: #a7f3d0;">
+          ⚡ Retrain AI Model Now
+        </button>
+      </div>
+
+      <div style="margin-top: 1.5rem; font-size: 0.83rem; color: var(--text-muted); line-height: 1.6; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+        <strong>Enrollment Guidance:</strong>
+        <ul style="padding-left: 1.25rem; margin-top: 0.35rem;">
+          <li>Look straight at the webcam in uniform lighting.</li>
+          <li>Slowly tilt and turn head slightly during the 20 captures for angle invariance.</li>
+          <li>Each crop is automatically normalized to 200x200 with histogram equalization.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Column: Live Viewfinder -->
+  <div class="panel">
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <span class="panel-title">2. Live Viewfinder Feed</span>
+        <span class="badge badge-indigo">Camera Stream</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btnCamPowerEnroll" onclick="toggleCameraPower()" style="padding: 0.28rem 0.75rem; font-size: 0.80rem; font-weight: 600;">
+        📷 Camera: ON
+      </button>
+    </div>
+    <div class="panel-body" style="padding: 1rem;">
+      <div class="video-container" style="position: relative;">
+        <img src="{{ url_for('video_feed') }}" alt="Enrollment Camera Feed" class="video-stream" id="enrollStream">
+        <div class="video-overlay-badge" id="enrollOverlayBadge">
+          <span class="dot dot-green"></span>
+          <span>Center Face in Target</span>
+        </div>
+
+        <!-- Interactive Camera-Off Overlay Card for Enrollment -->
+        <div id="cameraOffCardEnroll" class="camera-off-overlay" style="display: none;">
+          <div class="cam-off-badge">OFF</div>
+          <div class="cam-off-title">Camera is Powered Off</div>
+          <div class="cam-off-desc">Webcam hardware is disabled. Power on the camera to position your face and capture registration samples.</div>
+          <button class="btn btn-primary btn-sm" onclick="toggleCameraPower()" style="box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);">
+            ▶ Power On Camera
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let pendingCapturePayload = null;
+
+  // Automatically inform backend that we are in enrollment mode
+  window.addEventListener('DOMContentLoaded', () => {
+    fetch('/api/kiosk/set_enrollment_mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: true })
+    }).catch(() => {});
+  });
+
+  // Re-enable normal scanner mode when leaving page
+  window.addEventListener('beforeunload', () => {
+    fetch('/api/kiosk/set_enrollment_mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: false })
+    }).catch(() => {});
+  });
+
+  function showAlert(msg, type = 'info') {
+    const el = document.getElementById('enrollAlert');
+    el.style.display = 'block';
+    el.className = `alert alert-${type}`;
+    el.textContent = msg;
+  }
+
+  function closeModal() {
+    document.getElementById('duplicateModal').style.display = 'none';
+    pendingCapturePayload = null;
+    const btn = document.getElementById('btnStartCapture');
+    btn.disabled = false;
+  }
+
+  function confirmOverwrite() {
+    document.getElementById('duplicateModal').style.display = 'none';
+    if (pendingCapturePayload) {
+      executeCaptureRoutine(pendingCapturePayload, true);
+    }
+  }
+
+  async function initiateCaptureFlow() {
+    const nameInput = document.getElementById('studentName');
+    const rollInput = document.getElementById('rollNumber');
+    const yearSelect = document.getElementById('studentYear');
+    const branchSelect = document.getElementById('studentBranch');
+
+    const studentName = nameInput.value.trim();
+    const rollNumber = rollInput.value.trim().toUpperCase();
+    const year = yearSelect.value;
+    const branch = branchSelect.value;
+
+    if (!studentName) {
+      showAlert('Please enter the student\'s full name.', 'danger');
+      nameInput.focus();
+      return;
+    }
+
+    if (!rollNumber) {
+      showAlert('Please enter a valid Roll Number (e.g. 21B91A0501).', 'danger');
+      rollInput.focus();
+      return;
+    }
+
+    if (!isCameraActive) {
+      showAlert('The laptop camera is currently turned OFF. Please click "Power On Camera" above before capturing face samples.', 'warning');
+      return;
+    }
+
+    const payload = {
+      student_name: studentName,
+      roll_number: rollNumber,
+      year: year,
+      branch: branch
+    };
+
+    const btn = document.getElementById('btnStartCapture');
+    btn.disabled = true;
+
+    // Check for duplicate roll number or duplicate face match
+    try {
+      const checkRes = await fetch('/api/students/check_duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roll_number: rollNumber })
+      });
+      const checkData = await checkRes.json();
+
+      if (checkData.face_match && checkData.face_match.matched && checkData.face_match.is_duplicate_identity) {
+        const match = checkData.face_match;
+        document.getElementById('modalTitle').innerHTML = '⛔ Biometric Duplicate Detected';
+        document.getElementById('modalMessage').innerHTML = `
+          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-sm); padding: 1.1rem; margin-bottom: 1rem; text-align: left;">
+            <div style="font-weight: 700; color: var(--accent-red); font-size: 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+              <span>⚠️</span> Face Already Registered to Another Student
+            </div>
+            <div style="font-size: 0.90rem; color: var(--text-main); line-height: 1.6;">
+              &bull; Enrolled Student: <strong>${match.student_name}</strong><br>
+              &bull; Existing Roll No: <strong style="color: var(--accent-indigo);">${match.roll_number}</strong><br>
+              &bull; Department: <strong>${match.branch || 'N/A'}</strong><br>
+              &bull; Biometric Match: <strong style="color: var(--accent-green);">${match.confidence}% Similarity</strong> (Dist: ${match.distance})
+            </div>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin: 0; text-align: left;">
+            <strong style="color: var(--accent-red);">Registration Blocked:</strong> The Kiosk enforces a strict 1-to-1 biometric policy. The same face cannot be registered under a new roll number.
+          </p>
+        `;
+        document.getElementById('modalFooter').innerHTML = `
+          <button class="btn btn-secondary btn-sm" onclick="closeModal()">Dismiss & Cancel</button>
+          <a href="{{ url_for('students_page') }}" class="btn btn-primary btn-sm">View in Student Roster</a>
+        `;
+        document.getElementById('duplicateModal').style.display = 'flex';
+        btn.disabled = false;
+        return;
+      }
+
+      if (checkData.roll_exists) {
+        pendingCapturePayload = payload;
+        const exist = checkData.existing_student;
+        document.getElementById('modalTitle').innerHTML = '⚠️ Student Already Registered';
+        document.getElementById('modalMessage').innerHTML = `
+          Roll Number <strong>${rollNumber}</strong> is already assigned to:<br>
+          <strong style="color: var(--accent-indigo); font-size: 1.05rem;">${exist.student_name}</strong> (${exist.year || 'N/A'}, ${exist.branch || 'N/A'}).<br><br>
+          Do you want to <strong>re-enroll and overwrite</strong> their existing 20 face samples with new ones?
+        `;
+        document.getElementById('modalFooter').innerHTML = `
+          <button class="btn btn-secondary btn-sm" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="confirmOverwrite()">Yes, Overwrite & Re-Enroll</button>
+        `;
+        document.getElementById('duplicateModal').style.display = 'flex';
+        return;
+      }
+
+      // No duplicate issues: execute capture directly
+      executeCaptureRoutine(payload, false);
+
+    } catch (err) {
+      console.warn('Check duplicate error:', err);
+      executeCaptureRoutine(payload, false);
+    }
+  }
+
+  async function executeCaptureRoutine(payload, overwrite) {
+    const btn = document.getElementById('btnStartCapture');
+    btn.disabled = true;
+
+    document.getElementById('studentName').disabled = true;
+    document.getElementById('rollNumber').disabled = true;
+    document.getElementById('studentYear').disabled = true;
+    document.getElementById('studentBranch').disabled = true;
+
+    const progressFill = document.getElementById('progressFill');
+    const statusText = document.getElementById('captureStatusText');
+    const countText = document.getElementById('captureCountText');
+
+    showAlert(`Capturing face samples for ${payload.student_name} [${payload.roll_number}]... Please hold steady.`, 'info');
+
+    let captured = 0;
+    const total = 20;
+
+    for (let i = 1; i <= total; i++) {
+      statusText.textContent = `Capturing sample ${i}/${total}...`;
+      
+      try {
+        const res = await fetch('/api/students/capture_crop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_name: payload.student_name,
+            roll_number: payload.roll_number,
+            year: payload.year,
+            branch: payload.branch,
+            sample_index: i,
+            total_samples: total,
+            overwrite: overwrite
+          })
+        });
+
+        const data = await res.json();
+        if (res.status === 409 || data.status === 'duplicate_biometric') {
+          showAlert(`⛔ ${data.message}`, 'danger');
+          statusText.textContent = 'Biometric duplicate detected! Enrollment cancelled.';
+          btn.disabled = false;
+          document.getElementById('studentName').disabled = false;
+          document.getElementById('rollNumber').disabled = false;
+          document.getElementById('studentYear').disabled = false;
+          document.getElementById('studentBranch').disabled = false;
+          return;
+        }
+
+        if (data.status === 'success') {
+          captured++;
+          const pct = Math.round((captured / total) * 100);
+          progressFill.style.width = `${pct}%`;
+          countText.textContent = `${captured} / ${total}`;
+          if (data.auto_trained) {
+            statusText.textContent = 'Auto-training LBPH model in real-time...';
+          }
+        } else {
+          statusText.textContent = `Warning: ${data.message}`;
+        }
+      } catch (err) {
+        statusText.textContent = 'Capture dropped frame, retrying...';
+      }
+
+      await new Promise(r => setTimeout(r, 260));
+    }
+
+    if (captured >= 15) {
+      statusText.textContent = 'Enrolled & Model Auto-Trained in Real-Time ⚡';
+      showAlert(`🎉 Successfully enrolled ${payload.student_name} (${payload.roll_number})! AI Face Model trained in real-time. Redirecting to roster...`, 'success');
+      setTimeout(() => {
+        window.location.href = "{{ url_for('students_page') }}";
+      }, 1600);
+    } else {
+      showAlert(`Only ${captured}/20 samples could be captured. Ensure face is clearly visible in the camera and try again.`, 'danger');
+      btn.disabled = false;
+      document.getElementById('studentName').disabled = false;
+      document.getElementById('rollNumber').disabled = false;
+      document.getElementById('studentYear').disabled = false;
+      document.getElementById('studentBranch').disabled = false;
+    }
+  }
+
+  async function triggerRetrain() {
+    const btn = document.getElementById('btnTrain');
+    btn.disabled = true;
+    btn.textContent = '⚡ Retraining LBPH...';
+    showAlert('Updating LBPH Face Recognizer weights in memory...', 'info');
+
+    try {
+      const res = await fetch('/api/model/train', { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'success') {
+        showAlert(`Model retrained in ${data.duration}s! Total students: ${data.students_count}. Student is now live!`, 'success');
+        btn.textContent = '✔ Model Retrained';
+        setTimeout(() => {
+          window.location.href = "{{ url_for('students_page') }}";
+        }, 1800);
+      } else {
+        showAlert(`Training error: ${data.message}`, 'danger');
+        btn.disabled = false;
+        btn.textContent = '⚡ Retry Retraining';
+      }
+    } catch (err) {
+      showAlert(`Network error: ${err}`, 'danger');
+      btn.disabled = false;
+      btn.textContent = '⚡ Retry Retraining';
+    }
+  }
+
+  let isCameraActive = true;
+
+  function onCameraPowerToggled(isActive) {
+    updateEnrollCameraUI(isActive);
+  }
+
+  function onTelemetryUpdate(data) {
+    if (data.camera_active !== undefined) {
+      updateEnrollCameraUI(data.camera_active);
+    }
+  }
+
+  function updateEnrollCameraUI(isActive) {
+    isCameraActive = isActive;
+    const btnCam = document.getElementById('btnCamPowerEnroll');
+    const offCard = document.getElementById('cameraOffCardEnroll');
+    const badge = document.getElementById('enrollOverlayBadge');
+    const stream = document.getElementById('enrollStream');
+
+    if (isActive) {
+      if (btnCam) {
+        btnCam.innerHTML = '📷 Camera: <strong>ON</strong>';
+        btnCam.style.borderColor = 'var(--border-color)';
+        btnCam.style.color = 'var(--text-main)';
+      }
+      if (offCard) offCard.style.display = 'none';
+      if (badge) badge.style.display = 'flex';
+      if (stream) stream.src = "{{ url_for('video_feed') }}?t=" + Date.now();
+    } else {
+      if (btnCam) {
+        btnCam.innerHTML = '📷 Camera: <strong style="color: var(--accent-red);">OFF</strong>';
+        btnCam.style.borderColor = 'var(--accent-red)';
+        btnCam.style.color = 'var(--accent-red)';
+      }
+      if (offCard) offCard.style.display = 'flex';
+      if (badge) badge.style.display = 'none';
+    }
+  }
+</script>
+{% endblock %}

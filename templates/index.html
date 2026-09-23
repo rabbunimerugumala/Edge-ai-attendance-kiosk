@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Touchless Attendance Kiosk{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Live Attendance Kiosk Dashboard</h1>
+    <p class="page-desc">Real-time edge face recognition feed, student check-in telemetry, and Google Sheets cloud status.</p>
+  </div>
+  <div class="page-header-actions">
+    <button class="btn btn-secondary btn-sm" onclick="triggerManualSync()" id="btnSync">
+      ☁ Force Cloud Sync
+    </button>
+    <a href="{{ url_for('enroll_page') }}" class="btn btn-primary btn-sm">
+      + Register Student
+    </a>
+  </div>
+</div>
+
+<!-- KPI Metrics Grid -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-title">Today's Total Check-Ins</div>
+    <div class="kpi-value" id="kpiToday" style="color: var(--accent-indigo);">{{ today_count }}</div>
+    <div class="kpi-meta">Logged & verified present today</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-title">Enrolled Students</div>
+    <div class="kpi-value" id="kpiStudents">{{ student_count }}</div>
+    <div class="kpi-meta">Active profiles in LBPH model</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-title">Cloud Queue</div>
+    <div class="kpi-value" style="color: var(--accent-amber);" id="kpiPending">{{ pending_count }}</div>
+    <div class="kpi-meta">Unsynced records to Sheets</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-title">Hardware Telemetry</div>
+    <div class="kpi-value" style="font-size: 1.45rem;" id="kpiHardware">CPU --% | RAM --MB</div>
+    <div class="kpi-meta">Raspberry Pi Resource Usage</div>
+  </div>
+</div>
+
+<!-- Two-Column Grid: Stream & Live Feed -->
+<div class="two-col-grid">
+  <!-- Left: Live Video Preview -->
+  <div class="panel">
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+        <span class="panel-title">Live Camera Stream</span>
+        <span class="badge badge-success" id="badgeAutoScan">● Auto-Scan Active</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btnCamPower" onclick="toggleCameraPower()" style="padding: 0.28rem 0.75rem; font-size: 0.80rem; font-weight: 600;">
+        📷 Camera: ON
+      </button>
+    </div>
+    <div class="panel-body" style="padding: 1rem;">
+      <div class="video-container" style="position: relative;">
+        <img src="{{ url_for('video_feed') }}" alt="Live Camera Feed" class="video-stream" id="kioskStream">
+        <div class="video-overlay-badge" id="videoOverlayBadge">
+          <span class="dot dot-green"></span>
+          <span>640x480 &bull; Haar + LBPH</span>
+        </div>
+
+        <!-- Interactive Camera-Off Overlay Card -->
+        <div id="cameraOffCard" class="camera-off-overlay" style="display: none;">
+          <div class="cam-off-badge">OFF</div>
+          <div class="cam-off-title">Laptop Camera is Turned OFF</div>
+          <div class="cam-off-desc">Webcam hardware is powered down to save battery and ensure total privacy. Click below to power it back on.</div>
+          <button class="btn btn-primary btn-sm" onclick="toggleCameraPower()" style="box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);">
+            ▶ Power On Camera
+          </button>
+        </div>
+      </div>
+      <div style="margin-top: 0.85rem; font-size: 0.84rem; color: var(--text-muted); text-align: center;">
+        Students simply face the camera; arrival <strong>In-Time</strong> is recorded with a 10s anti-spam lock.
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Real-time Attendance Feed -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Recent Check-In Activity</span>
+      <a href="{{ url_for('attendance_page') }}" style="font-size: 0.82rem; font-weight: 600; color: var(--accent-indigo); text-decoration: none;">View Ledger &rarr;</a>
+    </div>
+    <div class="panel-body" style="padding: 0;">
+      <div class="table-wrapper">
+        <table class="table-compact">
+          <thead>
+            <tr>
+              <th>In-Time</th>
+              <th>Roll Number</th>
+              <th>Student Name</th>
+              <th>Branch</th>
+              <th>Sync</th>
+            </tr>
+          </thead>
+          <tbody id="recentAttendanceTbody">
+            {% for item in recent_logs %}
+            <tr>
+              <td><code style="color: var(--accent-indigo); font-weight: 600;">{{ item.in_time or item.timestamp.split(' ')[1] }}</code></td>
+              <td><strong>{{ item.roll_number or item.student_id }}</strong></td>
+              <td>{{ item.student_name }}</td>
+              <td style="color: var(--text-muted); font-size: 0.82rem; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ item.branch or 'N/A' }}">{{ item.branch or 'N/A' }}</td>
+              <td>
+                {% if item.synced == 1 %}
+                <span class="badge badge-success">Synced</span>
+                {% else %}
+                <span class="badge badge-warning">Pending</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-dim); padding: 3rem;">No attendance logged yet today.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function onCameraPowerToggled(isActive) {
+    updateCameraUIElements(isActive);
+  }
+
+  function updateCameraUIElements(isActive) {
+    const btnCamPower = document.getElementById('btnCamPower');
+    const cameraOffCard = document.getElementById('cameraOffCard');
+    const videoOverlayBadge = document.getElementById('videoOverlayBadge');
+    const kioskStream = document.getElementById('kioskStream');
+
+    if (isActive) {
+      if (btnCamPower) {
+        btnCamPower.innerHTML = '📷 Camera: <strong>ON</strong>';
+        btnCamPower.style.borderColor = 'var(--border-color)';
+        btnCamPower.style.color = 'var(--text-main)';
+      }
+      if (cameraOffCard) cameraOffCard.style.display = 'none';
+      if (videoOverlayBadge) videoOverlayBadge.style.display = 'flex';
+      if (kioskStream) kioskStream.src = "{{ url_for('video_feed') }}?t=" + Date.now();
+    } else {
+      if (btnCamPower) {
+        btnCamPower.innerHTML = '📷 Camera: <strong style="color: var(--accent-red);">OFF</strong>';
+        btnCamPower.style.borderColor = 'var(--accent-red)';
+        btnCamPower.style.color = 'var(--accent-red)';
+      }
+      if (cameraOffCard) cameraOffCard.style.display = 'flex';
+      if (videoOverlayBadge) videoOverlayBadge.style.display = 'none';
+    }
+  }
+
+  function onTelemetryUpdate(data) {
+    if (data.cpu_percent !== undefined && data.memory_mb !== undefined) {
+      document.getElementById('kpiHardware').textContent = `CPU ${data.cpu_percent}% | RAM ${data.memory_mb}MB`;
+    }
+    if (data.pending_sync_count !== undefined) {
+      document.getElementById('kpiPending').textContent = data.pending_sync_count;
+    }
+    if (data.total_students !== undefined) {
+      document.getElementById('kpiStudents').textContent = data.total_students;
+    }
+    if (data.camera_active !== undefined) {
+      updateCameraUIElements(data.camera_active);
+    }
+    if (data.autoscan_enabled !== undefined) {
+      const badge = document.getElementById('badgeAutoScan');
+      if (badge) {
+        if (data.autoscan_enabled) {
+          badge.className = 'badge badge-success';
+          badge.textContent = '● Auto-Scan Active';
+        } else {
+          badge.className = 'badge badge-warning';
+          badge.textContent = '⏸ Scanner Paused';
+        }
+      }
+    }
+  }
+
+  async function triggerManualSync() {
+    const btn = document.getElementById('btnSync');
+    btn.disabled = true;
+    btn.textContent = '☁ Syncing...';
+    try {
+      const res = await fetch('/api/sync/trigger', { method: 'POST' });
+      const data = await res.json();
+      alert(`Cloud Sync Result: ${data.message}`);
+      location.reload();
+    } catch (err) {
+      alert('Error triggering sync: ' + err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '☁ Force Cloud Sync';
+    }
+  }
+
+  // Refresh recent check-ins every 4 seconds
+  async function refreshRecentLogs() {
+    try {
+      const res = await fetch('/api/attendance?limit=8');
+      if (!res.ok) return;
+      const logs = await res.json();
+      const tbody = document.getElementById('recentAttendanceTbody');
+      if (logs.length === 0) return;
+
+      tbody.innerHTML = logs.map(item => {
+        const inTime = item.in_time || (item.timestamp.includes(' ') ? item.timestamp.split(' ')[1] : item.timestamp);
+        const roll = item.roll_number || item.student_id;
+        const branch = item.branch || 'N/A';
+        const badge = item.synced === 1 
+          ? '<span class="badge badge-success">Synced</span>'
+          : '<span class="badge badge-warning">Pending</span>';
+        return `
+          <tr>
+            <td><code style="color: var(--accent-indigo); font-weight: 600;">${inTime}</code></td>
+            <td><strong>${roll}</strong></td>
+            <td>${item.student_name}</td>
+            <td style="color: var(--text-muted); font-size: 0.82rem; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${branch}">${branch}</td>
+            <td>${badge}</td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      console.warn('Log polling error:', err);
+    }
+  }
+
+  setInterval(refreshRecentLogs, 4000);
+</script>
+{% endblock %}

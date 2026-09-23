@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance Ledger - Touchless Attendance Kiosk{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Attendance Audit Ledger</h1>
+    <p class="page-desc">Complete immutable record of all local student arrivals, discrete In-Times, academic branches, and Google Sheets sync status.</p>
+  </div>
+  <div class="page-header-actions">
+    <button class="btn btn-secondary btn-sm" onclick="exportToCSV()">
+      📥 Export Full CSV
+    </button>
+    <button class="btn btn-primary btn-sm" onclick="triggerManualSync()" id="btnSyncAll">
+      ☁ Force Cloud Sync
+    </button>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header" style="flex-wrap: wrap; gap: 0.75rem;">
+    <span class="panel-title">Attendance History Logs</span>
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+      <input type="text" id="searchInput" class="form-control" placeholder="Search by Roll No, Name, Branch..." style="width: 260px; padding: 0.45rem 0.8rem; font-size: 0.85rem;" onkeyup="filterTable()">
+    </div>
+  </div>
+  <div class="panel-body" style="padding: 0;">
+    <div class="table-wrapper">
+      <table id="attendanceTable">
+        <thead>
+          <tr>
+            <th>Log #</th>
+            <th>Date</th>
+            <th>In-Time</th>
+            <th>Roll Number</th>
+            <th>Student Name</th>
+            <th>Year</th>
+            <th>Branch</th>
+            <th>Cloud Sync Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td><code>#{{ log.id }}</code></td>
+            <td style="color: var(--text-muted); font-size: 0.85rem;">{{ log.date or log.timestamp.split(' ')[0] }}</td>
+            <td><strong style="color: var(--accent-indigo); font-size: 0.92rem;">{{ log.in_time or log.timestamp.split(' ')[1] }}</strong></td>
+            <td><code>{{ log.roll_number or log.student_id }}</code></td>
+            <td><strong>{{ log.student_name }}</strong></td>
+            <td><span class="badge badge-indigo">{{ log.year or 'N/A' }}</span></td>
+            <td style="color: var(--text-muted); font-size: 0.85rem;">{{ log.branch or 'N/A' }}</td>
+            <td>
+              {% if log.synced == 1 %}
+              <span class="badge badge-success">✔ Synced to Google Sheets</span>
+              {% else %}
+              <span class="badge badge-warning">⏳ Pending Cloud Push</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--text-dim); padding: 3.5rem;">
+              No attendance logs found in local database.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  function filterTable() {
+    const input = document.getElementById('searchInput');
+    const filter = input.value.toLowerCase();
+    const rows = document.querySelectorAll('#attendanceTable tbody tr');
+
+    rows.forEach(row => {
+      const text = row.innerText.toLowerCase();
+      row.style.display = text.includes(filter) ? '' : 'none';
+    });
+  }
+
+  async function triggerManualSync() {
+    const btn = document.getElementById('btnSyncAll');
+    btn.disabled = true;
+    btn.textContent = '☁ Syncing...';
+    try {
+      const res = await fetch('/api/sync/trigger', { method: 'POST' });
+      const data = await res.json();
+      alert(`Cloud Sync Result: ${data.message}`);
+      location.reload();
+    } catch (err) {
+      alert('Error triggering sync: ' + err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '☁ Force Cloud Sync';
+    }
+  }
+
+  function exportToCSV() {
+    let csv = [];
+    const rows = document.querySelectorAll('#attendanceTable tr');
+    
+    for (let i = 0; i < rows.length; i++) {
+      let row = [], cols = rows[i].querySelectorAll('td, th');
+      for (let j = 0; j < cols.length; j++) {
+        row.push('"' + cols[j].innerText.replace(/"/g, '""').trim() + '"');
+      }
+      csv.push(row.join(','));
+    }
+
+    const csvFile = new Blob([csv.join('\n')], { type: 'text/csv' });
+    const downloadLink = document.createElement('a');
+    downloadLink.download = `attendance_ledger_${new Date().toISOString().slice(0, 10)}.csv`;
+    downloadLink.href = window.URL.createObjectURL(csvFile);
+    downloadLink.style.display = 'none';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+  }
+</script>
+{% endblock %}

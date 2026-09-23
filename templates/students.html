@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Enrolled Students Roster - Touchless Attendance Kiosk{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Registered Students Directory</h1>
+    <p class="page-desc">Complete database of enrolled student profiles, academic details, and LBPH face training datasets.</p>
+  </div>
+  <div class="page-header-actions">
+    <button class="btn btn-danger btn-sm" onclick="resetAllKioskData()" id="btnResetAll" title="Wipe all face datasets, students, and logs">
+      🗑 Clear All Data
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="retrainModel()" id="btnRetrain">
+      ⚡ Retrain AI Model
+    </button>
+    <a href="{{ url_for('enroll_page') }}" class="btn btn-primary btn-sm">
+      + Register New Student
+    </a>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header">
+    <span class="panel-title">Active Student Profiles ({{ students|length }})</span>
+  </div>
+  <div class="panel-body" style="padding: 0;">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Roll Number</th>
+            <th>Full Name</th>
+            <th>Year</th>
+            <th>Branch / Department</th>
+            <th>Face Samples</th>
+            <th>Enrolled Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sid, s in students.items() %}
+          <tr id="row-{{ sid }}">
+            <td><strong style="color: var(--accent-indigo); letter-spacing: 0.02em;">{{ s.roll_number or sid }}</strong></td>
+            <td><strong>{{ s.student_name }}</strong></td>
+            <td><span class="badge badge-indigo">{{ s.year or 'N/A' }}</span></td>
+            <td style="color: var(--text-muted); font-size: 0.88rem;">{{ s.branch or 'N/A' }}</td>
+            <td>
+              <span class="badge badge-info">{{ s.sample_count }} crops</span>
+            </td>
+            <td style="color: var(--text-dim); font-size: 0.83rem;">{{ s.enrolled_at or 'N/A' }}</td>
+            <td>
+              <button class="btn btn-danger btn-sm" onclick="deleteStudent('{{ sid }}', '{{ s.student_name }}', '{{ s.roll_number or sid }}')">
+                Delete
+              </button>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" style="text-align: center; color: var(--text-dim); padding: 3.5rem;">
+              No students enrolled yet. Click <strong>+ Register New Student</strong> above to begin face enrollment.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  async function deleteStudent(studentId, studentName, rollNumber) {
+    if (!confirm(`Are you sure you want to delete ${studentName} [Roll No: ${rollNumber}] and all their face training images?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/students/${studentId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.status === 'success') {
+        const row = document.getElementById(`row-${studentId}`);
+        if (row) row.remove();
+        alert(`Successfully deleted ${studentName} (${rollNumber}). Remember to retrain the AI model.`);
+      } else {
+        alert('Error: ' + data.message);
+      }
+    } catch (err) {
+      alert('Delete request failed: ' + err);
+    }
+  }
+
+  async function retrainModel() {
+    const btn = document.getElementById('btnRetrain');
+    btn.disabled = true;
+    btn.textContent = '⚡ Retraining...';
+    try {
+      const res = await fetch('/api/model/train', { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'success') {
+        alert(`LBPH Face Recognizer successfully updated in ${data.duration}s!\nStudents: ${data.students_count} | Face Crops: ${data.samples_count}`);
+      } else {
+        alert('Retraining alert: ' + data.message);
+      }
+    } catch (err) {
+      alert('Retrain request failed: ' + err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⚡ Retrain AI Model';
+    }
+  }
+
+  async function resetAllKioskData() {
+    const confirmation = prompt('⚠️ DANGER ZONE: This will delete ALL enrolled student profiles, all face training datasets, and clear attendance records.\n\nType "RESET" to confirm:');
+    if (confirmation !== 'RESET') {
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/system/reset_all', { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'success') {
+        alert('All face datasets, model weights, and student profiles have been completely cleared.');
+        location.reload();
+      } else {
+        alert('Error resetting data: ' + data.message);
+      }
+    } catch (err) {
+      alert('Reset request failed: ' + err);
+    }
+  }
+</script>
+{% endblock %}

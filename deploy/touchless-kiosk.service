@@ -1,0 +1,15 @@
+[Unit]
+Description=Touchless Smart Attendance Kiosk Web & Auto-Scan Service
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Touchless-Smart-Attendance-Kiosk
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>{% block title %}Touchless Kiosk Admin{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3.2">
+</head>
+<body>
+  <!-- Navigation Backdrop for Mobile -->
+  <div class="nav-backdrop" id="navBackdrop" onclick="closeMobileMenu()"></div>
+
+  <!-- Navigation Bar (Executive White Theme & Mobile Optimized) -->
+  <nav class="navbar">
+    <div class="nav-container">
+      
+      <!-- Brand & Mobile Action Header Row -->
+      <div class="nav-brand-group">
+        <a href="{{ url_for('index') }}" class="brand">
+          <div class="brand-icon">👁</div>
+          <div class="brand-text">
+            <span class="brand-title">Touchless Kiosk</span>
+            <span class="brand-tag">Edge AI</span>
+          </div>
+        </a>
+
+        <!-- Mobile Controls (Strictly hidden on desktop, visible on mobile <= 992px) -->
+        <div class="mobile-actions">
+          <button class="mobile-quick-cam" onclick="toggleCameraPower()" id="mobileCamBtn" title="Quick Toggle Camera">
+            <span class="dot dot-green" id="mobileCamDot"></span>
+            <span id="mobileCamText">CAM ON</span>
+          </button>
+          <button class="mobile-menu-btn" onclick="toggleMobileMenu()" id="mobileMenuBtn" aria-label="Toggle navigation menu">
+            <span id="menuIcon">☰</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Navigation Links & Status Area (Unified desktop bar, floating drawer on mobile) -->
+      <div class="nav-collapse" id="navCollapse">
+        <div class="nav-mobile-section-label">PAGE NAVIGATION</div>
+        <ul class="nav-links" id="navLinks">
+          <li><a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}active{% endif %}" onclick="closeMobileMenu()">Dashboard</a></li>
+          <li><a href="{{ url_for('enroll_page') }}" class="{% if request.endpoint == 'enroll_page' %}active{% endif %}" onclick="closeMobileMenu()">Enroll Student</a></li>
+          <li><a href="{{ url_for('students_page') }}" class="{% if request.endpoint == 'students_page' %}active{% endif %}" onclick="closeMobileMenu()">Students Roster</a></li>
+          <li><a href="{{ url_for('attendance_page') }}" class="{% if request.endpoint == 'attendance_page' %}active{% endif %}" onclick="closeMobileMenu()">Attendance Logs</a></li>
+        </ul>
+
+        <div class="nav-mobile-section-label">HARDWARE CONTROLS & TELEMETRY</div>
+        <div class="nav-status" id="navStatus">
+          <!-- Interactive Auto-Scan Toggle Button -->
+          <div class="status-pill toggle-badge" id="autoScanPill" onclick="toggleAutoScan()" title="Click to Pause / Resume Face Scanner">
+            <div class="status-pill-left">
+              <span class="dot dot-green" id="scanDot"></span>
+              <span id="scanText">Scanner: ACTIVE</span>
+            </div>
+            <span class="status-pill-hint">Tap to toggle</span>
+          </div>
+
+          <!-- Interactive Camera Power Toggle Button -->
+          <div class="status-pill toggle-badge" id="cameraStatusPill" onclick="toggleCameraPower()" title="Click to Power Laptop Camera ON / OFF">
+            <div class="status-pill-left">
+              <span class="dot dot-green" id="camDot"></span>
+              <span id="camText">Camera: ON</span>
+            </div>
+            <span class="status-pill-hint">Tap to toggle</span>
+          </div>
+
+          <!-- Cloud Sync Status Indicator -->
+          <div class="status-pill" id="syncStatusPill" title="Google Sheets Cloud Status">
+            <div class="status-pill-left">
+              <span class="dot dot-green" id="syncDot"></span>
+              <span id="syncText">Cloud Synced</span>
+            </div>
+            <span class="status-pill-hint">Auto</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </nav>
+
+  <!-- Main Content Body -->
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p>Touchless Smart Attendance Kiosk &bull; Edge AI on Raspberry Pi 3B+ &bull; OpenCV Haar + LBPH &bull; SQLite WAL Mode</p>
+  </footer>
+
+  <!-- Telemetry & Mobile Scripts -->
+  <script>
+    function toggleMobileMenu() {
+      const collapse = document.getElementById('navCollapse');
+      const backdrop = document.getElementById('navBackdrop');
+      const menuIcon = document.getElementById('menuIcon');
+      if (!collapse) return;
+      const isOpen = collapse.classList.toggle('show-mobile');
+      if (backdrop) backdrop.classList.toggle('show-mobile', isOpen);
+      if (menuIcon) menuIcon.textContent = isOpen ? '✕' : '☰';
+      document.body.classList.toggle('nav-menu-open', isOpen);
+    }
+
+    function closeMobileMenu() {
+      const collapse = document.getElementById('navCollapse');
+      const backdrop = document.getElementById('navBackdrop');
+      const menuIcon = document.getElementById('menuIcon');
+      if (collapse) collapse.classList.remove('show-mobile');
+      if (backdrop) backdrop.classList.remove('show-mobile');
+      if (menuIcon) menuIcon.textContent = '☰';
+      document.body.classList.remove('nav-menu-open');
+    }
+
+    async function toggleAutoScan() {
+      try {
+        const res = await fetch('/api/kiosk/toggle_scan', { method: 'POST' });
+        const data = await res.json();
+        updateScanPillUI(data.autoscan_enabled);
+      } catch (err) {
+        console.warn('Error toggling autoscan:', err);
+      }
+    }
+
+    function updateScanPillUI(isActive) {
+      const scanDot = document.getElementById('scanDot');
+      const scanText = document.getElementById('scanText');
+      if (!scanDot || !scanText) return;
+      if (isActive) {
+        scanDot.className = 'dot dot-green';
+        scanText.textContent = 'Scanner: ACTIVE';
+      } else {
+        scanDot.className = 'dot dot-amber';
+        scanText.textContent = 'Scanner: PAUSED';
+      }
+    }
+
+    async function toggleCameraPower() {
+      const camPill = document.getElementById('cameraStatusPill');
+      if (camPill) camPill.style.opacity = '0.6';
+      try {
+        const res = await fetch('/api/camera/toggle', { method: 'POST' });
+        const data = await res.json();
+        updateCameraPillUI(data.camera_active);
+        if (typeof onCameraPowerToggled === 'function') {
+          onCameraPowerToggled(data.camera_active);
+        }
+      } catch (err) {
+        console.warn('Error toggling camera power:', err);
+      } finally {
+        if (camPill) camPill.style.opacity = '1';
+      }
+    }
+
+    function updateCameraPillUI(isActive) {
+      const camDot = document.getElementById('camDot');
+      const camText = document.getElementById('camText');
+      const camPill = document.getElementById('cameraStatusPill');
+      const mobileCamDot = document.getElementById('mobileCamDot');
+      const mobileCamText = document.getElementById('mobileCamText');
+      const mobileCamBtn = document.getElementById('mobileCamBtn');
+
+      if (mobileCamDot && mobileCamText) {
+        if (isActive) {
+          mobileCamDot.className = 'dot dot-green';
+          mobileCamText.textContent = 'CAM ON';
+          if (mobileCamBtn) mobileCamBtn.classList.remove('cam-btn-off');
+        } else {
+          mobileCamDot.className = 'dot dot-red';
+          mobileCamText.textContent = 'CAM OFF';
+          if (mobileCamBtn) mobileCamBtn.classList.add('cam-btn-off');
+        }
+      }
+
+      if (!camDot || !camText) return;
+      if (isActive) {
+        camDot.className = 'dot dot-green';
+        camText.textContent = 'Camera: ON';
+        if (camPill) {
+          camPill.classList.remove('pill-off');
+          camPill.title = 'Click to Turn Camera OFF (Release device)';
+        }
+      } else {
+        camDot.className = 'dot dot-red';
+        camText.textContent = 'Camera: OFF';
+        if (camPill) {
+          camPill.classList.add('pill-off');
+          camPill.title = 'Click to Turn Camera ON';
+        }
+      }
+    }
+
+    async function updateSystemTelemetry() {
+      try {
+        const res = await fetch('/api/system/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        // Update AutoScan Pill
+        if (data.autoscan_enabled !== undefined) {
+          updateScanPillUI(data.autoscan_enabled);
+        }
+
+        // Update Camera status
+        if (data.camera_active !== undefined) {
+          updateCameraPillUI(data.camera_active);
+        }
+
+        // Update Cloud Sync status
+        const syncDot = document.getElementById('syncDot');
+        const syncText = document.getElementById('syncText');
+        if (data.pending_sync_count === 0) {
+          syncDot.className = 'dot dot-green';
+          syncText.textContent = 'Cloud Synced';
+        } else {
+          syncDot.className = 'dot dot-amber';
+          syncText.textContent = `${data.pending_sync_count} Pending`;
+        }
+
+        if (typeof onTelemetryUpdate === 'function') {
+          onTelemetryUpdate(data);
+        }
+      } catch (err) {
+        console.warn('Telemetry error:', err);
+      }
+    }
+
+    setInterval(updateSystemTelemetry, 4000);
+    window.addEventListener('DOMContentLoaded', updateSystemTelemetry);
+  </script>
+</body>
+</html>
