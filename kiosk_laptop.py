@@ -262,7 +262,7 @@ class CloudSyncWorker:
                 self.webhook_url,
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=6.0
+                timeout=25.0
             )
 
             if response.status_code == 200:

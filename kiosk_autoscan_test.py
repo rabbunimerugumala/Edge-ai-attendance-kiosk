@@ -260,7 +260,7 @@ class CloudSyncWorker:
                 self.webhook_url,
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=8.0
+                timeout=25.0
             )
             roundtrip_ms = (time.perf_counter() - t0) * 1000.0
 
