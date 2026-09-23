@@ -73,26 +73,37 @@ function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getActiveSheet();
 
-    // Auto-initialize expanded header row if sheet is completely blank
-    if (sheet.getLastRow() === 0) {
-      var headers = [
-        "Date",
-        "In-Time",
-        "Roll Number",
-        "Student Name",
-        "Year",
-        "Branch",
-        "Status",
-        "Synced At (Cloud)"
-      ];
-      sheet.appendRow(headers);
+    // Auto-initialize or auto-upgrade expanded header row with all 8 academic fields
+    var headers = [
+      "Date",
+      "In-Time",
+      "Roll Number",
+      "Student Name",
+      "Year",
+      "Branch",
+      "Status",
+      "Synced At (Cloud)"
+    ];
 
-      // Format header row
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(headers);
       var headerRange = sheet.getRange(1, 1, 1, headers.length);
       headerRange.setFontWeight("bold");
       headerRange.setBackground("#1e293b");
       headerRange.setFontColor("#FFFFFF");
       sheet.setFrozenRows(1);
+    } else {
+      // If the sheet already exists with old headers, automatically upgrade Row 1
+      var currentFirstRow = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length)).getValues()[0];
+      var headerStr = currentFirstRow.join(" ");
+      if (headerStr.indexOf("Roll Number") === -1 || headerStr.indexOf("Branch") === -1) {
+        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+        var headerRange = sheet.getRange(1, 1, 1, headers.length);
+        headerRange.setFontWeight("bold");
+        headerRange.setBackground("#1e293b");
+        headerRange.setFontColor("#FFFFFF");
+        sheet.setFrozenRows(1);
+      }
     }
 
     var nowIso = new Date().toISOString();
@@ -140,6 +151,11 @@ function doPost(e) {
       var numRows = rowsToAppend.length;
       var numCols = rowsToAppend[0].length;
       sheet.getRange(startRow, 1, numRows, numCols).setValues(rowsToAppend);
+
+      // Auto-resize columns for clean readability
+      for (var col = 1; col <= numCols; col++) {
+        sheet.autoResizeColumn(col);
+      }
     }
 
     return ContentService.createTextOutput(JSON.stringify({
