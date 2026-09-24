@@ -36,7 +36,8 @@ SERVICE_FILE="/etc/systemd/system/touchless-kiosk.service"
 cat <<EOF > "$SERVICE_FILE"
 [Unit]
 Description=Touchless Smart Attendance Kiosk Web & Auto-Scan Service
-After=network.target
+After=network.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
